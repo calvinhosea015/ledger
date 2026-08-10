@@ -6,6 +6,7 @@ import '../../catalog/models.dart';
 import '../../core/money.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
+import '../../domain/envelope_ledger/envelope_ledger.dart';
 import '../widgets/common_widgets.dart';
 
 class CategoriesScreen extends ConsumerWidget {
@@ -145,10 +146,10 @@ class CategoriesScreen extends ConsumerWidget {
     final currency = ref.watch(currencyCodeProvider);
     final mono = Theme.of(context).extension<LedgerTypeExt>()?.mono;
 
-    final budgetByCategory = <String, Envelope>{};
+    final budgetByCategory = <String, EnvelopeLine>{};
     for (final line in budgetView.valueOrNull?.lines ?? const []) {
       final id = line.envelope.categoryId;
-      if (id != null) budgetByCategory[id] = line.envelope;
+      if (id != null) budgetByCategory[id] = line;
     }
 
     return Scaffold(
@@ -177,8 +178,12 @@ class CategoriesScreen extends ConsumerWidget {
             separatorBuilder: (_, __) => const Divider(),
             itemBuilder: (context, i) {
               final c = items[i];
-              final envelope = budgetByCategory[c.id];
-              final budgeted = envelope?.budgeted ?? 0;
+              final line = budgetByCategory[c.id];
+              final budgeted = line?.envelope.budgeted ?? 0;
+              final remaining = line?.difference;
+              final remainingLabel = remaining == null
+                  ? 'No budget this month'
+                  : 'Remaining ${formatMoney(remaining, currency)}';
               return ListTile(
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
@@ -193,8 +198,12 @@ class CategoriesScreen extends ConsumerWidget {
                 ),
                 title: Text(c.name),
                 subtitle: Text(
-                  'Monthly budget',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  remainingLabel,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: remaining != null && remaining < 0
+                            ? LedgerColors.paleRedFg
+                            : null,
+                      ),
                 ),
                 trailing: Text(
                   formatMoney(budgeted, currency),
@@ -204,7 +213,7 @@ class CategoriesScreen extends ConsumerWidget {
                   context,
                   ref,
                   category: c,
-                  envelope: envelope,
+                  envelope: line?.envelope,
                   currency: currency,
                 ),
               );

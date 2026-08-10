@@ -8,6 +8,8 @@ import '../../core/money.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../domain/envelope_ledger/envelope_ledger.dart';
+import '../../domain/export/monthly_excel_export.dart';
+import '../export/monthly_excel_exporter.dart';
 import '../widgets/common_widgets.dart';
 
 class BudgetScreen extends ConsumerWidget {
@@ -20,10 +22,20 @@ class BudgetScreen extends ConsumerWidget {
     final currency = ref.watch(currencyCodeProvider);
     final monthLabel = DateFormat.yMMMM().format(month);
     final mono = Theme.of(context).extension<LedgerTypeExt>()?.mono;
+    final range = MonthRange(month.year, month.month);
 
     return Scaffold(
       backgroundColor: LedgerColors.canvas,
-      appBar: AppBar(title: const Text('Budget')),
+      appBar: AppBar(
+        title: const Text('Budget'),
+        actions: [
+          IconButton(
+            tooltip: 'Export Excel ($monthLabel)',
+            onPressed: () => _exportMonth(context, ref, month),
+            icon: const Icon(Icons.file_download_outlined),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openEnvelopeSheet(context, ref),
         child: const Icon(Icons.add),
@@ -44,10 +56,20 @@ class BudgetScreen extends ConsumerWidget {
                   icon: const Icon(Icons.chevron_left),
                 ),
                 Expanded(
-                  child: Text(
-                    monthLabel,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleMedium,
+                  child: Column(
+                    children: [
+                      Text(
+                        monthLabel,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        '${DateFormat.MMMd().format(range.start)}'
+                        ' – ${DateFormat.MMMd().format(range.end)}',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                   ),
                 ),
                 IconButton(
@@ -70,7 +92,8 @@ class BudgetScreen extends ConsumerWidget {
                 if (data.lines.isEmpty) {
                   return const EmptyState(
                     title: 'No envelopes',
-                    body: 'Add an envelope or reopen this month to seed defaults.',
+                    body:
+                        'Add an envelope or reopen this month to seed defaults.',
                   );
                 }
                 return ListView(
@@ -113,6 +136,53 @@ class BudgetScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _exportMonth(
+    BuildContext context,
+    WidgetRef ref,
+    DateTime month,
+  ) async {
+    final user = ref.read(authStateProvider).valueOrNull;
+    if (user == null) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Preparing Excel export…')),
+    );
+
+    try {
+      final catalog = ref.read(inventoryCatalogProvider);
+      final purchases = await catalog.purchases(user.id);
+      final categories = await catalog.categories(user.id);
+      final budget = await ref.read(budgetMonthViewProvider.future);
+
+      final path = await MonthlyExcelExporter().exportMonth(
+        year: month.year,
+        month: month.month,
+        purchases: purchases,
+        categories: categories,
+        budget: budget,
+      );
+
+      if (!context.mounted) return;
+      messenger.hideCurrentSnackBar();
+      if (path == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Export cancelled')),
+        );
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('Exported to $path')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
+    }
+  }
+
   static String _typeLabel(EnvelopeType type) {
     switch (type) {
       case EnvelopeType.income:
@@ -140,6 +210,11 @@ class _SummaryBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final remaining = data.remaining;
+    final over = remaining < 0;
+    final remainingColor =
+        over ? LedgerColors.paleRedFg : LedgerColors.paleGreenFg;
+
     Widget cell(String label, double amount) {
       return Expanded(
         child: Column(
@@ -159,17 +234,35 @@ class _SummaryBlock extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Text(
+          'Remaining budget',
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          formatMoney(remaining, currency),
+          style: mono?.copyWith(
+            fontSize: 28,
+            fontWeight: FontWeight.w600,
+            color: remainingColor,
+            letterSpacing: -0.5,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          over
+              ? 'Over by ${formatMoney(-remaining, currency)} '
+                  '(budgeted ${formatMoney(data.expenseBudgeted, currency)})'
+              : 'of ${formatMoney(data.expenseBudgeted, currency)} budgeted · '
+                  'spent ${formatMoney(data.expenseActual, currency)}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 20),
         Row(
           children: [
             cell('Income', data.incomeActual),
             cell('Expense', data.expenseActual),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
             cell('Net', data.net),
-            cell('Remaining', data.remaining),
           ],
         ),
       ],
@@ -192,13 +285,14 @@ class _EnvelopeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final over = line.envelope.type.isExpense
-        ? line.difference < 0
-        : line.difference < 0;
+    final isExpense = line.envelope.type.isExpense;
+    final remaining = line.difference;
+    final over = remaining < 0;
     final badgeBg =
         over ? LedgerColors.paleRedBg : LedgerColors.paleGreenBg;
     final badgeFg =
         over ? LedgerColors.paleRedFg : LedgerColors.paleGreenFg;
+    final badgeLabel = isExpense ? 'Remaining' : 'Vs budget';
 
     return InkWell(
       onTap: onTap,
@@ -219,7 +313,7 @@ class _EnvelopeRow extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   color: badgeBg,
                   child: Text(
-                    formatMoney(line.difference, currency),
+                    '$badgeLabel ${formatMoney(remaining, currency)}',
                     style: mono?.copyWith(fontSize: 12, color: badgeFg),
                   ),
                 ),
