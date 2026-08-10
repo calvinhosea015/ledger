@@ -4,6 +4,7 @@ import '../domain/purchase_lifecycle/purchase_lifecycle.dart';
 
 const defaultCategorySeeds = <NewCategory>[
   NewCategory(name: 'Groceries', color: '#EDF3EC'),
+  NewCategory(name: 'Utilities', color: '#E8DEEE'),
   NewCategory(name: 'Household', color: '#E1F3FE'),
   NewCategory(name: 'Personal', color: '#FBF3DB'),
   NewCategory(name: 'Other', color: '#FDEBEC'),
@@ -53,7 +54,16 @@ class InventoryCatalog {
     return all
         .where((p) => lifecycle.matchesFilter(p, filter, today: today))
         .toList()
-      ..sort((a, b) => a.expectedFinishAt.compareTo(b.expectedFinishAt));
+      ..sort((a, b) {
+        final ae = a.expectedFinishAt;
+        final be = b.expectedFinishAt;
+        if (ae == null && be == null) {
+          return b.purchasedAt.compareTo(a.purchasedAt);
+        }
+        if (ae == null) return 1;
+        if (be == null) return -1;
+        return ae.compareTo(be);
+      });
   }
 
   Future<Purchase> addPurchase(String userId, NewPurchase input) {
@@ -80,7 +90,7 @@ class InventoryCatalog {
 
   void _validate(
     DateTime purchasedAt,
-    DateTime expectedFinishAt,
+    DateTime? expectedFinishAt,
     DateTime? expiresAt,
   ) {
     final buy = DateTime(
@@ -88,13 +98,17 @@ class InventoryCatalog {
       purchasedAt.month,
       purchasedAt.day,
     );
-    final finish = DateTime(
-      expectedFinishAt.year,
-      expectedFinishAt.month,
-      expectedFinishAt.day,
-    );
-    if (finish.isBefore(buy)) {
-      throw ArgumentError('Expected finish must be on or after purchase date');
+    if (expectedFinishAt != null) {
+      final finish = DateTime(
+        expectedFinishAt.year,
+        expectedFinishAt.month,
+        expectedFinishAt.day,
+      );
+      if (finish.isBefore(buy)) {
+        throw ArgumentError(
+          'Expected finish must be on or after purchase date',
+        );
+      }
     }
     if (expiresAt != null) {
       final exp = DateTime(expiresAt.year, expiresAt.month, expiresAt.day);

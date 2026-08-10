@@ -21,16 +21,19 @@ class PurchaseLifecycle {
     final now = _dateOnly(today ?? DateTime.now());
     if (purchase.finishedAt != null) return ItemStatus.finished;
 
-    final finish = _dateOnly(purchase.expectedFinishAt);
-    if (finish.isBefore(now)) return ItemStatus.overdue;
+    final finish = purchase.expectedFinishAt == null
+        ? null
+        : _dateOnly(purchase.expectedFinishAt!);
+    if (finish != null && finish.isBefore(now)) return ItemStatus.overdue;
 
     final expires = purchase.expiresAt == null
         ? null
         : _dateOnly(purchase.expiresAt!);
     final soonEnd = now.add(Duration(days: soonWindowDays));
 
-    final finishingSoon =
-        !finish.isAfter(soonEnd) && !finish.isBefore(now);
+    final finishingSoon = finish != null &&
+        !finish.isAfter(soonEnd) &&
+        !finish.isBefore(now);
     final expiringSoon = expires != null &&
         !expires.isAfter(soonEnd) &&
         !expires.isBefore(now);
@@ -50,7 +53,7 @@ class PurchaseLifecycle {
     final status = statusOf(purchase, today: today);
     switch (filter) {
       case HomeFilter.all:
-        return status != ItemStatus.finished;
+        return true;
       case HomeFilter.finishingSoon:
         return status == ItemStatus.finishingSoon ||
             status == ItemStatus.overdue;

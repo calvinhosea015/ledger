@@ -55,7 +55,7 @@ class Purchase {
     required this.price,
     required this.currencyCode,
     required this.purchasedAt,
-    required this.expectedFinishAt,
+    this.expectedFinishAt,
     this.expiresAt,
     this.finishedAt,
     this.notes,
@@ -68,7 +68,8 @@ class Purchase {
   final double price;
   final String currencyCode;
   final DateTime purchasedAt;
-  final DateTime expectedFinishAt;
+  /// Set for Utilities / Groceries only; null for other categories.
+  final DateTime? expectedFinishAt;
   final DateTime? expiresAt;
   final DateTime? finishedAt;
   final String? notes;
@@ -87,6 +88,7 @@ class Purchase {
     DateTime? expiresAt,
     DateTime? finishedAt,
     String? notes,
+    bool clearExpectedFinishAt = false,
     bool clearExpiresAt = false,
     bool clearFinishedAt = false,
     bool clearNotes = false,
@@ -99,7 +101,9 @@ class Purchase {
       price: price ?? this.price,
       currencyCode: currencyCode ?? this.currencyCode,
       purchasedAt: purchasedAt ?? this.purchasedAt,
-      expectedFinishAt: expectedFinishAt ?? this.expectedFinishAt,
+      expectedFinishAt: clearExpectedFinishAt
+          ? null
+          : (expectedFinishAt ?? this.expectedFinishAt),
       expiresAt: clearExpiresAt ? null : (expiresAt ?? this.expiresAt),
       finishedAt: clearFinishedAt ? null : (finishedAt ?? this.finishedAt),
       notes: clearNotes ? null : (notes ?? this.notes),
@@ -198,7 +202,7 @@ class NewPurchase {
     required this.price,
     required this.currencyCode,
     required this.purchasedAt,
-    required this.expectedFinishAt,
+    this.expectedFinishAt,
     this.expiresAt,
     this.notes,
   });
@@ -208,7 +212,7 @@ class NewPurchase {
   final double price;
   final String currencyCode;
   final DateTime purchasedAt;
-  final DateTime expectedFinishAt;
+  final DateTime? expectedFinishAt;
   final DateTime? expiresAt;
   final String? notes;
 }

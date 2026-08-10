@@ -23,7 +23,9 @@ create table if not exists public.items (
   price double precision not null,
   currency_code text not null,
   purchased_at timestamptz not null,
-  expected_finish_at timestamptz not null,
+  -- Optional: used for Utilities / Groceries only
+  expected_finish_at timestamptz,
+  -- Optional: used for Groceries only
   expires_at timestamptz,
   finished_at timestamptz,
   notes text,
@@ -94,3 +96,6 @@ create policy "envelopes_own"
   on public.envelopes for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- Existing projects created with NOT NULL expected_finish_at:
+alter table public.items alter column expected_finish_at drop not null;

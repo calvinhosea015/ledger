@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ledger/adapters/fake/fake_adapters.dart';
+import 'package:ledger/catalog/category_date_rules.dart';
 import 'package:ledger/catalog/models.dart';
 import 'package:ledger/core/money.dart';
 import 'package:ledger/domain/envelope_ledger/envelope_ledger.dart';
@@ -8,7 +9,7 @@ import 'package:ledger/domain/spend_summary/spend_summary.dart';
 
 Purchase _p({
   required DateTime purchasedAt,
-  required DateTime expectedFinishAt,
+  DateTime? expectedFinishAt,
   DateTime? expiresAt,
   DateTime? finishedAt,
   double price = 10,
@@ -78,18 +79,46 @@ void main() {
       expect(lifecycle.statusOf(next, today: today), ItemStatus.finished);
     });
 
-    test('all filter excludes finished', () {
+    test('all filter includes finished', () {
       final active = _p(
         purchasedAt: DateTime(2026, 8, 1),
         expectedFinishAt: DateTime(2026, 9, 1),
       );
       final done = lifecycle.markFinished(active, at: today);
       expect(lifecycle.matchesFilter(active, HomeFilter.all, today: today), true);
-      expect(lifecycle.matchesFilter(done, HomeFilter.all, today: today), false);
+      expect(lifecycle.matchesFilter(done, HomeFilter.all, today: today), true);
       expect(
         lifecycle.matchesFilter(done, HomeFilter.finished, today: today),
         true,
       );
+    });
+
+    test('active when no expected finish and not expired', () {
+      final p = _p(purchasedAt: DateTime(2026, 8, 1));
+      expect(lifecycle.statusOf(p, today: today), ItemStatus.active);
+    });
+
+    test('expiringSoon without expected finish', () {
+      final p = _p(
+        purchasedAt: DateTime(2026, 8, 1),
+        expiresAt: DateTime(2026, 8, 12),
+      );
+      expect(lifecycle.statusOf(p, today: today), ItemStatus.expiringSoon);
+    });
+  });
+
+  group('CategoryDateRules', () {
+    test('expected date for utilities and groceries only', () {
+      expect(CategoryDateRules.showsExpectedDate('Utilities'), true);
+      expect(CategoryDateRules.showsExpectedDate('groceries'), true);
+      expect(CategoryDateRules.showsExpectedDate('Household'), false);
+      expect(CategoryDateRules.showsExpectedDate('Personal'), false);
+    });
+
+    test('expiry date for groceries only', () {
+      expect(CategoryDateRules.showsExpiryDate('Groceries'), true);
+      expect(CategoryDateRules.showsExpiryDate('Utilities'), false);
+      expect(CategoryDateRules.showsExpiryDate('Other'), false);
     });
   });
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../catalog/category_date_rules.dart';
 import '../../catalog/models.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
@@ -25,7 +26,7 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
 
   String? _categoryId;
   late DateTime _purchasedAt;
-  late DateTime _expectedFinishAt;
+  DateTime? _expectedFinishAt;
   DateTime? _expiresAt;
   Purchase? _existing;
   bool _loading = true;
@@ -38,8 +39,31 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
     super.initState();
     final today = DateTime.now();
     _purchasedAt = DateTime(today.year, today.month, today.day);
-    _expectedFinishAt = _purchasedAt.add(const Duration(days: 7));
     WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
+  }
+
+  Category? _selectedCategory(List<Category> categories) {
+    if (_categoryId == null) return null;
+    for (final c in categories) {
+      if (c.id == _categoryId) return c;
+    }
+    return null;
+  }
+
+  void _applyCategoryDateDefaults(Category? category) {
+    if (category == null) {
+      _expectedFinishAt = null;
+      _expiresAt = null;
+      return;
+    }
+    if (!CategoryDateRules.showsExpectedDate(category.name)) {
+      _expectedFinishAt = null;
+    } else {
+      _expectedFinishAt ??= _purchasedAt.add(const Duration(days: 7));
+    }
+    if (!CategoryDateRules.showsExpiryDate(category.name)) {
+      _expiresAt = null;
+    }
   }
 
   Future<void> _bootstrap() async {
@@ -69,6 +93,8 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
         }
       }
     }
+
+    _applyCategoryDateDefaults(_selectedCategory(cats));
 
     if (mounted) setState(() => _loading = false);
   }
@@ -101,6 +127,24 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
       setState(() => _error = 'Pick a category');
       return;
     }
+
+    final categories = ref.read(categoriesProvider).valueOrNull ?? [];
+    final category = _selectedCategory(categories);
+    if (category == null) {
+      setState(() => _error = 'Pick a category');
+      return;
+    }
+
+    final needsExpected = CategoryDateRules.showsExpectedDate(category.name);
+    final needsExpiry = CategoryDateRules.showsExpiryDate(category.name);
+    final expected = needsExpected ? _expectedFinishAt : null;
+    final expires = needsExpiry ? _expiresAt : null;
+
+    if (needsExpected && expected == null) {
+      setState(() => _error = 'Expected date is required for ${category.name}');
+      return;
+    }
+
     setState(() => _error = null);
 
     final price = double.tryParse(_price.text.replaceAll(',', '')) ?? 0;
@@ -111,10 +155,11 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
           categoryId: _categoryId!,
           price: price,
           purchasedAt: _purchasedAt,
-          expectedFinishAt: _expectedFinishAt,
-          expiresAt: _expiresAt,
+          expectedFinishAt: expected,
+          expiresAt: expires,
           notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
-          clearExpiresAt: _expiresAt == null,
+          clearExpectedFinishAt: expected == null,
+          clearExpiresAt: expires == null,
           clearNotes: _notes.text.trim().isEmpty,
         );
         await ref.read(purchasesProvider.notifier).save(updated);
@@ -127,8 +172,8 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
                 price: price,
                 currencyCode: currency,
                 purchasedAt: _purchasedAt,
-                expectedFinishAt: _expectedFinishAt,
-                expiresAt: _expiresAt,
+                expectedFinishAt: expected,
+                expiresAt: expires,
                 notes:
                     _notes.text.trim().isEmpty ? null : _notes.text.trim(),
               ),
@@ -151,6 +196,11 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
     final categories = ref.watch(categoriesProvider).valueOrNull ?? [];
     final dateFmt = DateFormat.yMMMd();
     final activeEdit = isEdit && _existing != null && !_existing!.isFinished;
+    final category = _selectedCategory(categories);
+    final showExpected =
+        category != null && CategoryDateRules.showsExpectedDate(category.name);
+    final showExpiry =
+        category != null && CategoryDateRules.showsExpiryDate(category.name);
 
     return Scaffold(
       backgroundColor: LedgerColors.canvas,
@@ -195,7 +245,14 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
                         for (final c in categories)
                           DropdownMenuItem(value: c.id, child: Text(c.name)),
                       ],
-                      onChanged: (v) => setState(() => _categoryId = v),
+                      onChanged: (v) {
+                        setState(() {
+                          _categoryId = v;
+                          _applyCategoryDateDefaults(
+                            _selectedCategory(categories),
+                          );
+                        });
+                      },
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -210,7 +267,8 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
                       ],
                       decoration: const InputDecoration(labelText: 'Price'),
                       validator: (v) {
-                        if (v == null || double.tryParse(v.replaceAll(',', '')) == null) {
+                        if (v == null ||
+                            double.tryParse(v.replaceAll(',', '')) == null) {
                           return 'Enter a number';
                         }
                         return null;
@@ -225,38 +283,47 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
                         onPicked: (d) => setState(() => _purchasedAt = d),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    _DateField(
-                      label: 'Expected finish',
-                      value: dateFmt.format(_expectedFinishAt),
-                      onTap: () => _pickDate(
-                        initial: _expectedFinishAt,
-                        firstDate: _purchasedAt,
-                        onPicked: (d) =>
-                            setState(() => _expectedFinishAt = d),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _DateField(
-                      label: 'Expiry (optional)',
-                      value: _expiresAt == null
-                          ? 'Not set'
-                          : dateFmt.format(_expiresAt!),
-                      onTap: () async {
-                        await _pickDate(
-                          initial: _expiresAt ?? _expectedFinishAt,
+                    if (showExpected) ...[
+                      const SizedBox(height: 16),
+                      _DateField(
+                        label: 'Expected date',
+                        value: _expectedFinishAt == null
+                            ? 'Not set'
+                            : dateFmt.format(_expectedFinishAt!),
+                        onTap: () => _pickDate(
+                          initial: _expectedFinishAt ??
+                              _purchasedAt.add(const Duration(days: 7)),
                           firstDate: _purchasedAt,
-                          onPicked: (d) => setState(() => _expiresAt = d),
-                        );
-                      },
-                      trailing: _expiresAt == null
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () =>
-                                  setState(() => _expiresAt = null),
-                            ),
-                    ),
+                          onPicked: (d) =>
+                              setState(() => _expectedFinishAt = d),
+                        ),
+                      ),
+                    ],
+                    if (showExpiry) ...[
+                      const SizedBox(height: 16),
+                      _DateField(
+                        label: 'Expiry (optional)',
+                        value: _expiresAt == null
+                            ? 'Not set'
+                            : dateFmt.format(_expiresAt!),
+                        onTap: () async {
+                          await _pickDate(
+                            initial: _expiresAt ??
+                                _expectedFinishAt ??
+                                _purchasedAt,
+                            firstDate: _purchasedAt,
+                            onPicked: (d) => setState(() => _expiresAt = d),
+                          );
+                        },
+                        trailing: _expiresAt == null
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () =>
+                                    setState(() => _expiresAt = null),
+                              ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _notes,

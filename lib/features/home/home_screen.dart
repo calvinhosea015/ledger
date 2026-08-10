@@ -27,7 +27,7 @@ class HomeScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: LedgerColors.canvas,
       appBar: AppBar(
-        title: const Text('Active'),
+        title: const Text('Home'),
         actions: [
           IconButton(
             tooltip: 'Sign out',
@@ -88,7 +88,11 @@ class HomeScreen extends ConsumerWidget {
                     final status = lifecycle.statusOf(p);
                     final subtitle = status == ItemStatus.finished
                         ? 'Finished ${dateFmt.format(p.finishedAt!)}'
-                        : 'Finishes ${dateFmt.format(p.expectedFinishAt)}';
+                        : p.expectedFinishAt != null
+                            ? 'Expected ${dateFmt.format(p.expectedFinishAt!)}'
+                            : p.expiresAt != null
+                                ? 'Expires ${dateFmt.format(p.expiresAt!)}'
+                                : 'Purchased ${dateFmt.format(p.purchasedAt)}';
                     return PurchaseRow(
                       purchase: p,
                       categoryName: catNames[p.categoryId] ?? 'Category',
