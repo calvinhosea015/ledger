@@ -138,16 +138,41 @@ class CategoriesController extends AsyncNotifier<List<Category>> {
           NewCategory(name: name, color: color),
         );
     await refresh();
+    ref.invalidate(budgetMonthViewProvider);
   }
 
   Future<void> rename(Category category, String name) async {
-    await ref.read(inventoryCatalogProvider).renameCategory(category, name);
+    final renamed = await ref
+        .read(inventoryCatalogProvider)
+        .renameCategory(category, name);
+    final user = ref.read(authStateProvider).valueOrNull;
+    if (user != null) {
+      final month = ref.read(budgetMonthProvider);
+      await ref.read(envelopeLedgerProvider).renameCategoryBudgets(
+            userId: user.id,
+            category: renamed,
+            year: month.year,
+            month: month.month,
+          );
+    }
     await refresh();
+    ref.invalidate(budgetMonthViewProvider);
   }
 
   Future<void> remove(String id) async {
+    final user = ref.read(authStateProvider).valueOrNull;
+    if (user != null) {
+      final month = ref.read(budgetMonthProvider);
+      await ref.read(envelopeLedgerProvider).removeCategoryBudgets(
+            userId: user.id,
+            categoryId: id,
+            year: month.year,
+            month: month.month,
+          );
+    }
     await ref.read(inventoryCatalogProvider).removeCategory(id);
     await refresh();
+    ref.invalidate(budgetMonthViewProvider);
   }
 }
 

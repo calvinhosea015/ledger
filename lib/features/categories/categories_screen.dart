@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../catalog/models.dart';
+import '../../core/money.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../widgets/common_widgets.dart';
@@ -44,9 +47,109 @@ class CategoriesScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _edit(
+    BuildContext context,
+    WidgetRef ref, {
+    required Category category,
+    required Envelope? envelope,
+    required String currency,
+  }) async {
+    final nameController = TextEditingController(text: category.name);
+    final budgetController = TextEditingController(
+      text: (envelope?.budgeted ?? 0).toString(),
+    );
+
+    final result = await showDialog<_CategoryEditResult>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit category'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Name'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: budgetController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+              ],
+              decoration: InputDecoration(
+                labelText: 'Monthly budget ($currency)',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(
+              context,
+              const _CategoryEditResult(delete: true),
+            ),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: LedgerColors.paleRedFg),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              context,
+              _CategoryEditResult(
+                name: nameController.text.trim(),
+                budgeted: double.tryParse(
+                      budgetController.text.replaceAll(',', ''),
+                    ) ??
+                    0,
+              ),
+            ),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null) return;
+
+    if (result.delete) {
+      await ref.read(categoriesProvider.notifier).remove(category.id);
+      return;
+    }
+
+    final name = result.name ?? category.name;
+    if (name.isNotEmpty && name != category.name) {
+      await ref.read(categoriesProvider.notifier).rename(category, name);
+    }
+
+    final budgeted = result.budgeted ?? envelope?.budgeted ?? 0;
+    if (envelope != null && budgeted != envelope.budgeted) {
+      await ref.read(envelopeLedgerProvider).saveEnvelope(
+            envelope.copyWith(budgeted: budgeted),
+          );
+      ref.invalidate(budgetMonthViewProvider);
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final categories = ref.watch(categoriesProvider);
+    final budgetView = ref.watch(budgetMonthViewProvider);
+    final currency = ref.watch(currencyCodeProvider);
+    final mono = Theme.of(context).extension<LedgerTypeExt>()?.mono;
+
+    final budgetByCategory = <String, Envelope>{};
+    for (final line in budgetView.valueOrNull?.lines ?? const []) {
+      final id = line.envelope.categoryId;
+      if (id != null) budgetByCategory[id] = line.envelope;
+    }
 
     return Scaffold(
       backgroundColor: LedgerColors.canvas,
@@ -66,7 +169,7 @@ class CategoriesScreen extends ConsumerWidget {
           if (items.isEmpty) {
             return const EmptyState(
               title: 'No categories',
-              body: 'Add a category to organize purchases.',
+              body: 'Add a category to organize purchases and set its budget.',
             );
           }
           return ListView.separated(
@@ -74,6 +177,8 @@ class CategoriesScreen extends ConsumerWidget {
             separatorBuilder: (_, __) => const Divider(),
             itemBuilder: (context, i) {
               final c = items[i];
+              final envelope = budgetByCategory[c.id];
+              final budgeted = envelope?.budgeted ?? 0;
               return ListTile(
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
@@ -87,49 +192,21 @@ class CategoriesScreen extends ConsumerWidget {
                   ),
                 ),
                 title: Text(c.name),
-                trailing: const Icon(Icons.chevron_right, size: 20),
-                onTap: () async {
-                  final controller = TextEditingController(text: c.name);
-                  final name = await showDialog<String>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Rename category'),
-                      content: TextField(
-                        controller: controller,
-                        autofocus: true,
-                        decoration: const InputDecoration(labelText: 'Name'),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Cancel'),
-                        ),
-                        TextButton(
-                          onPressed: () async {
-                            await ref
-                                .read(categoriesProvider.notifier)
-                                .remove(c.id);
-                            if (context.mounted) Navigator.pop(context);
-                          },
-                          child: const Text(
-                            'Delete',
-                            style: TextStyle(color: LedgerColors.paleRedFg),
-                          ),
-                        ),
-                        FilledButton(
-                          onPressed: () =>
-                              Navigator.pop(context, controller.text.trim()),
-                          child: const Text('Save'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (name != null && name.isNotEmpty && name != c.name) {
-                    await ref
-                        .read(categoriesProvider.notifier)
-                        .rename(c, name);
-                  }
-                },
+                subtitle: Text(
+                  'Monthly budget',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                trailing: Text(
+                  formatMoney(budgeted, currency),
+                  style: mono?.copyWith(fontSize: 13),
+                ),
+                onTap: () => _edit(
+                  context,
+                  ref,
+                  category: c,
+                  envelope: envelope,
+                  currency: currency,
+                ),
               );
             },
           );
@@ -137,4 +214,16 @@ class CategoriesScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _CategoryEditResult {
+  const _CategoryEditResult({
+    this.name,
+    this.budgeted,
+    this.delete = false,
+  });
+
+  final String? name;
+  final double? budgeted;
+  final bool delete;
 }

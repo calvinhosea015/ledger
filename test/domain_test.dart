@@ -156,7 +156,10 @@ void main() {
         userId,
         const NewCategory(name: 'Groceries'),
       );
-      await store.createCategory(userId, const NewCategory(name: 'Household'));
+      final household = await store.createCategory(
+        userId,
+        const NewCategory(name: 'Household'),
+      );
 
       await store.createPurchase(
         userId,
@@ -179,11 +182,17 @@ void main() {
         currencyCode: 'IDR',
       );
 
-      expect(view.lines.length, 4);
+      expect(view.lines.length, 4); // income + 2 categories + savings
       final groceryLine = view.lines.firstWhere(
         (l) => l.envelope.name == 'Groceries',
       );
       expect(groceryLine.resolvedActual, 30);
+      expect(groceryLine.envelope.categoryId, groceries.id);
+
+      final householdLine = view.lines.firstWhere(
+        (l) => l.envelope.name == 'Household',
+      );
+      expect(householdLine.envelope.categoryId, household.id);
 
       await ledger.saveEnvelope(
         groceryLine.envelope.copyWith(budgeted: 100),
@@ -207,6 +216,46 @@ void main() {
       expect(again.incomeActual, 500);
       expect(again.expenseActual, 30);
       expect(again.net, 470);
+    });
+
+    test('adds a budget envelope when a new category appears', () async {
+      final store = FakeCatalogStore();
+      final ledger = EnvelopeLedger(store: store);
+      const userId = 'u1';
+
+      final groceries = await store.createCategory(
+        userId,
+        const NewCategory(name: 'Groceries'),
+      );
+
+      await ledger.resolveMonth(
+        userId: userId,
+        year: 2026,
+        month: 8,
+        purchases: const [],
+        categories: [groceries],
+        currencyCode: 'IDR',
+      );
+
+      final personal = await store.createCategory(
+        userId,
+        const NewCategory(name: 'Personal'),
+      );
+
+      final view = await ledger.resolveMonth(
+        userId: userId,
+        year: 2026,
+        month: 8,
+        purchases: const [],
+        categories: [groceries, personal],
+        currencyCode: 'IDR',
+      );
+
+      expect(view.lines.where((l) => l.envelope.categoryId != null).length, 2);
+      expect(
+        view.lines.any((l) => l.envelope.categoryId == personal.id),
+        isTrue,
+      );
     });
   });
 }

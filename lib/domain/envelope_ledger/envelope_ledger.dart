@@ -70,6 +70,15 @@ class EnvelopeLedger {
         categories: categories,
         currencyCode: currencyCode,
       );
+    } else {
+      envelopes = await _ensureCategoryEnvelopes(
+        userId: userId,
+        year: year,
+        month: month,
+        categories: categories,
+        currencyCode: currencyCode,
+        existing: envelopes,
+      );
     }
 
     final spendByCategory = _monthSpendByCategory(purchases, year, month);
@@ -136,6 +145,60 @@ class EnvelopeLedger {
   Future<void> removeEnvelope(String envelopeId) =>
       _store.deleteEnvelope(envelopeId);
 
+  /// Creates a variable expense envelope linked to [category] for the month.
+  Future<Envelope> addCategoryBudget({
+    required String userId,
+    required Category category,
+    required int year,
+    required int month,
+    required String currencyCode,
+    double budgeted = 0,
+  }) {
+    _validateMonth(month);
+    return _store.createEnvelope(
+      userId,
+      NewEnvelope(
+        year: year,
+        month: month,
+        name: category.name,
+        type: EnvelopeType.variable,
+        budgeted: budgeted,
+        currencyCode: currencyCode,
+        categoryId: category.id,
+      ),
+    );
+  }
+
+  /// Removes envelopes linked to a deleted category for the given month.
+  Future<void> removeCategoryBudgets({
+    required String userId,
+    required String categoryId,
+    required int year,
+    required int month,
+  }) async {
+    final envelopes = await _store.listEnvelopes(userId, year, month);
+    for (final e in envelopes) {
+      if (e.categoryId == categoryId) {
+        await _store.deleteEnvelope(e.id);
+      }
+    }
+  }
+
+  /// Keeps envelope name in sync when a category is renamed.
+  Future<void> renameCategoryBudgets({
+    required String userId,
+    required Category category,
+    required int year,
+    required int month,
+  }) async {
+    final envelopes = await _store.listEnvelopes(userId, year, month);
+    for (final e in envelopes) {
+      if (e.categoryId == category.id && e.name != category.name) {
+        await _store.updateEnvelope(e.copyWith(name: category.name));
+      }
+    }
+  }
+
   Future<Profile> ensureProfile(String userId) async {
     final existing = await _store.getProfile(userId);
     if (existing != null) return existing;
@@ -169,13 +232,6 @@ class EnvelopeLedger {
     required int month,
     required List<Category> categories,
   }) async {
-    String? categoryIdNamed(String name) {
-      for (final c in categories) {
-        if (c.name.toLowerCase() == name.toLowerCase()) return c.id;
-      }
-      return categories.isEmpty ? null : categories.first.id;
-    }
-
     final seeds = <NewEnvelope>[
       NewEnvelope(
         year: year,
@@ -185,24 +241,16 @@ class EnvelopeLedger {
         budgeted: 0,
         currencyCode: currencyCode,
       ),
-      NewEnvelope(
-        year: year,
-        month: month,
-        name: 'Rent',
-        type: EnvelopeType.fixed,
-        budgeted: 0,
-        currencyCode: currencyCode,
-        categoryId: categoryIdNamed('Household'),
-      ),
-      NewEnvelope(
-        year: year,
-        month: month,
-        name: 'Groceries',
-        type: EnvelopeType.variable,
-        budgeted: 0,
-        currencyCode: currencyCode,
-        categoryId: categoryIdNamed('Groceries'),
-      ),
+      for (final category in categories)
+        NewEnvelope(
+          year: year,
+          month: month,
+          name: category.name,
+          type: EnvelopeType.variable,
+          budgeted: 0,
+          currencyCode: currencyCode,
+          categoryId: category.id,
+        ),
       NewEnvelope(
         year: year,
         month: month,
@@ -218,6 +266,70 @@ class EnvelopeLedger {
       created.add(await _store.createEnvelope(userId, seed));
     }
     return created;
+  }
+
+  /// Ensures every category has a linked budget envelope for the month,
+  /// plus default income and savings buckets if missing.
+  Future<List<Envelope>> _ensureCategoryEnvelopes({
+    required String userId,
+    required String currencyCode,
+    required int year,
+    required int month,
+    required List<Category> categories,
+    required List<Envelope> existing,
+  }) async {
+    final next = List<Envelope>.from(existing);
+
+    if (!next.any((e) => e.type == EnvelopeType.income)) {
+      next.add(
+        await _store.createEnvelope(
+          userId,
+          NewEnvelope(
+            year: year,
+            month: month,
+            name: 'Salary',
+            type: EnvelopeType.income,
+            budgeted: 0,
+            currencyCode: currencyCode,
+          ),
+        ),
+      );
+    }
+
+    final linkedIds = next
+        .map((e) => e.categoryId)
+        .whereType<String>()
+        .toSet();
+    for (final category in categories) {
+      if (linkedIds.contains(category.id)) continue;
+      next.add(
+        await addCategoryBudget(
+          userId: userId,
+          category: category,
+          year: year,
+          month: month,
+          currencyCode: currencyCode,
+        ),
+      );
+    }
+
+    if (!next.any((e) => e.type == EnvelopeType.savings)) {
+      next.add(
+        await _store.createEnvelope(
+          userId,
+          NewEnvelope(
+            year: year,
+            month: month,
+            name: 'Emergency savings',
+            type: EnvelopeType.savings,
+            budgeted: 0,
+            currencyCode: currencyCode,
+          ),
+        ),
+      );
+    }
+
+    return next;
   }
 
   void _validateMonth(int month) {
