@@ -54,6 +54,8 @@ class PurchaseLifecycle {
     switch (filter) {
       case HomeFilter.all:
         return true;
+      case HomeFilter.active:
+        return status != ItemStatus.finished;
       case HomeFilter.finishingSoon:
         return status == ItemStatus.finishingSoon ||
             status == ItemStatus.overdue;
@@ -67,7 +69,7 @@ class PurchaseLifecycle {
   static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 }
 
-enum HomeFilter { all, finishingSoon, expiringSoon, finished }
+enum HomeFilter { all, active, finishingSoon, expiringSoon, finished }
 
 extension ItemStatusLabel on ItemStatus {
   String get label {

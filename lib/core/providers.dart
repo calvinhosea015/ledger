@@ -178,6 +178,9 @@ class CategoriesController extends AsyncNotifier<List<Category>> {
 
 final homeFilterProvider = StateProvider<HomeFilter>((ref) => HomeFilter.all);
 
+/// `null` means all categories.
+final homeCategoryFilterProvider = StateProvider<String?>((ref) => null);
+
 final purchasesProvider =
     AsyncNotifierProvider<PurchasesController, List<Purchase>>(
   PurchasesController.new,
@@ -188,18 +191,27 @@ class PurchasesController extends AsyncNotifier<List<Purchase>> {
   Future<List<Purchase>> build() async {
     final user = ref.watch(authStateProvider).valueOrNull;
     final filter = ref.watch(homeFilterProvider);
+    final categoryId = ref.watch(homeCategoryFilterProvider);
     if (user == null) return [];
-    return ref.read(inventoryCatalogProvider).filteredPurchases(user.id, filter);
+    return ref.read(inventoryCatalogProvider).filteredPurchases(
+          user.id,
+          filter,
+          categoryId: categoryId,
+        );
   }
 
   Future<void> refresh() async {
     final user = ref.read(authStateProvider).valueOrNull;
     final filter = ref.read(homeFilterProvider);
+    final categoryId = ref.read(homeCategoryFilterProvider);
     if (user == null) return;
     state = const AsyncLoading();
     state = await AsyncValue.guard(
-      () =>
-          ref.read(inventoryCatalogProvider).filteredPurchases(user.id, filter),
+      () => ref.read(inventoryCatalogProvider).filteredPurchases(
+            user.id,
+            filter,
+            categoryId: categoryId,
+          ),
     );
   }
 

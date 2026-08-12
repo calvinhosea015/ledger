@@ -48,22 +48,15 @@ class InventoryCatalog {
   Future<List<Purchase>> filteredPurchases(
     String userId,
     HomeFilter filter, {
+    String? categoryId,
     DateTime? today,
   }) async {
     final all = await _store.listPurchases(userId);
     return all
         .where((p) => lifecycle.matchesFilter(p, filter, today: today))
+        .where((p) => categoryId == null || p.categoryId == categoryId)
         .toList()
-      ..sort((a, b) {
-        final ae = a.expectedFinishAt;
-        final be = b.expectedFinishAt;
-        if (ae == null && be == null) {
-          return b.purchasedAt.compareTo(a.purchasedAt);
-        }
-        if (ae == null) return 1;
-        if (be == null) return -1;
-        return ae.compareTo(be);
-      });
+      ..sort((a, b) => b.purchasedAt.compareTo(a.purchasedAt));
   }
 
   Future<Purchase> addPurchase(String userId, NewPurchase input) {

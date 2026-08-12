@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ledger/adapters/fake/fake_adapters.dart';
 import 'package:ledger/catalog/category_date_rules.dart';
+import 'package:ledger/catalog/inventory_catalog.dart';
 import 'package:ledger/catalog/models.dart';
 import 'package:ledger/core/money.dart';
 import 'package:ledger/domain/envelope_ledger/envelope_ledger.dart';
@@ -90,6 +91,22 @@ void main() {
       expect(
         lifecycle.matchesFilter(done, HomeFilter.finished, today: today),
         true,
+      );
+    });
+
+    test('active filter excludes finished', () {
+      final active = _p(
+        purchasedAt: DateTime(2026, 8, 1),
+        expectedFinishAt: DateTime(2026, 9, 1),
+      );
+      final done = lifecycle.markFinished(active, at: today);
+      expect(
+        lifecycle.matchesFilter(active, HomeFilter.active, today: today),
+        true,
+      );
+      expect(
+        lifecycle.matchesFilter(done, HomeFilter.active, today: today),
+        false,
       );
     });
 
@@ -285,6 +302,72 @@ void main() {
         view.lines.any((l) => l.envelope.categoryId == personal.id),
         isTrue,
       );
+    });
+  });
+
+  group('InventoryCatalog.filteredPurchases', () {
+    test('sorts by purchasedAt newest first and filters by category', () async {
+      final store = FakeCatalogStore();
+      final catalog = InventoryCatalog(store: store);
+      const userId = 'u1';
+
+      final groceries = await store.createCategory(
+        userId,
+        const NewCategory(name: 'Groceries'),
+      );
+      final household = await store.createCategory(
+        userId,
+        const NewCategory(name: 'Household'),
+      );
+
+      await catalog.addPurchase(
+        userId,
+        NewPurchase(
+          name: 'Older milk',
+          categoryId: groceries.id,
+          price: 10,
+          currencyCode: 'IDR',
+          purchasedAt: DateTime(2026, 8, 1),
+          expectedFinishAt: DateTime(2026, 8, 5),
+        ),
+      );
+      await catalog.addPurchase(
+        userId,
+        NewPurchase(
+          name: 'Newer soap',
+          categoryId: household.id,
+          price: 20,
+          currencyCode: 'IDR',
+          purchasedAt: DateTime(2026, 8, 10),
+        ),
+      );
+      await catalog.addPurchase(
+        userId,
+        NewPurchase(
+          name: 'Newest bread',
+          categoryId: groceries.id,
+          price: 15,
+          currencyCode: 'IDR',
+          purchasedAt: DateTime(2026, 8, 12),
+        ),
+      );
+
+      final all = await catalog.filteredPurchases(userId, HomeFilter.all);
+      expect(all.map((p) => p.name).toList(), [
+        'Newest bread',
+        'Newer soap',
+        'Older milk',
+      ]);
+
+      final groceriesOnly = await catalog.filteredPurchases(
+        userId,
+        HomeFilter.all,
+        categoryId: groceries.id,
+      );
+      expect(groceriesOnly.map((p) => p.name).toList(), [
+        'Newest bread',
+        'Older milk',
+      ]);
     });
   });
 }
