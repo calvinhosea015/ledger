@@ -171,6 +171,9 @@ class CategoriesController extends AsyncNotifier<List<Category>> {
           );
     }
     await ref.read(inventoryCatalogProvider).removeCategory(id);
+    if (ref.read(homeCategoryFilterProvider) == id) {
+      ref.read(homeCategoryFilterProvider.notifier).state = null;
+    }
     await refresh();
     ref.invalidate(budgetMonthViewProvider);
   }

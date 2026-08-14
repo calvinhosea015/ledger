@@ -1,9 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ledger/adapters/fake/fake_adapters.dart';
 import 'package:ledger/catalog/category_date_rules.dart';
+import 'package:ledger/catalog/catalog_store.dart';
 import 'package:ledger/catalog/inventory_catalog.dart';
 import 'package:ledger/catalog/models.dart';
 import 'package:ledger/core/money.dart';
+import 'package:ledger/core/providers.dart';
 import 'package:ledger/domain/envelope_ledger/envelope_ledger.dart';
 import 'package:ledger/domain/purchase_lifecycle/purchase_lifecycle.dart';
 import 'package:ledger/domain/spend_summary/spend_summary.dart';
@@ -29,6 +32,14 @@ Purchase _p({
     expiresAt: expiresAt,
     finishedAt: finishedAt,
   );
+}
+
+class _AuthenticatedController extends AuthController {
+  @override
+  Future<SessionUser?> build() async => const SessionUser(
+        id: 'u1',
+        email: 'calvin@example.com',
+      );
 }
 
 void main() {
@@ -369,5 +380,32 @@ void main() {
         'Older milk',
       ]);
     });
+  });
+
+  group('CategoriesController', () {
+    test(
+      'clears a selected category filter when that category is removed',
+      () async {
+        final store = FakeCatalogStore();
+        final container = ProviderContainer(
+          overrides: [
+            authStateProvider.overrideWith(_AuthenticatedController.new),
+            catalogStoreProvider.overrideWithValue(store),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final category = await store.createCategory(
+          'u1',
+          const NewCategory(name: 'Groceries'),
+        );
+        await container.read(categoriesProvider.future);
+        container.read(homeCategoryFilterProvider.notifier).state = category.id;
+
+        await container.read(categoriesProvider.notifier).remove(category.id);
+
+        expect(container.read(homeCategoryFilterProvider), isNull);
+      },
+    );
   });
 }
