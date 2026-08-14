@@ -175,7 +175,7 @@ class CategoriesScreen extends ConsumerWidget {
           }
           return ListView.separated(
             itemCount: items.length,
-            separatorBuilder: (_, __) => const Divider(),
+            separatorBuilder: (_, _) => const Divider(),
             itemBuilder: (context, i) {
               final c = items[i];
               final line = budgetByCategory[c.id];

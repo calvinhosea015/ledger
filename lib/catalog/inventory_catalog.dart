@@ -13,9 +13,9 @@ const defaultCategorySeeds = <NewCategory>[
 /// Deep module over [CatalogStore]: list/filter/mutate + seed defaults.
 class InventoryCatalog {
   InventoryCatalog({
-    required CatalogStore store,
+    required this._store,
     this.lifecycle = const PurchaseLifecycle(),
-  }) : _store = store;
+  });
 
   final CatalogStore _store;
   final PurchaseLifecycle lifecycle;

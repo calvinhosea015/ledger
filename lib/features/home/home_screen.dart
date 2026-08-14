@@ -136,7 +136,7 @@ class HomeScreen extends ConsumerWidget {
                 }
                 return ListView.separated(
                   itemCount: items.length,
-                  separatorBuilder: (_, __) => const Divider(),
+                  separatorBuilder: (_, _) => const Divider(),
                   itemBuilder: (context, i) {
                     final p = items[i];
                     final status = lifecycle.statusOf(p);

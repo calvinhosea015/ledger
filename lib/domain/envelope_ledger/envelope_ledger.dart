@@ -45,7 +45,7 @@ class MonthEnvelopeView {
 
 /// Deep module: month envelopes + purchase-driven expense actuals.
 class EnvelopeLedger {
-  const EnvelopeLedger({required CatalogStore store}) : _store = store;
+  const EnvelopeLedger({required this._store});
 
   final CatalogStore _store;
 

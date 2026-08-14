@@ -11,10 +11,9 @@ import '../../domain/spend_summary/spend_summary.dart';
 /// Builds and saves a monthly Excel export via the system save dialog.
 class MonthlyExcelExporter {
   MonthlyExcelExporter({
-    MonthlyExcelExport builder = const MonthlyExcelExport(),
-    SpendSummary spendSummary = const SpendSummary(),
-  })  : _builder = builder,
-        _spendSummary = spendSummary;
+    this._builder = const MonthlyExcelExport(),
+    this._spendSummary = const SpendSummary(),
+  });
 
   final MonthlyExcelExport _builder;
   final SpendSummary _spendSummary;
